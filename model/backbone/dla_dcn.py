@@ -331,7 +331,6 @@ class DLA(nn.Module):
         return y
 
     def load_pretrained_model(self, data='imagenet', name='dla34', hash='ba72cf86'):
-        # fc = self.fc
         if name.endswith('.pth'):
             model_weights = torch.load(data + name)
         else:

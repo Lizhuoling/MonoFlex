@@ -1,5 +1,6 @@
 import argparse
 import os
+import pdb
 
 import torch
 
@@ -36,6 +37,8 @@ def default_argument_parser():
     parser.add_argument("--num_gpus", type=int, default=1, help="number of gpu")
     parser.add_argument("--batch_size", type=int, default=8, help="number of batch_size")
     parser.add_argument("--num_work", type=int, default=8, help="number of workers for dataloader")
+    parser.add_argument("--seed", type = int, default = 22, help = "The seed to fix training process.")
+    parser.add_argument("--scratch_backbone", action = "store_true", help = "Whether to use train backbone from scratch.")
     parser.add_argument("--output", type=str, default=None)
 
     parser.add_argument("--vis_thre", type=float, default=0.25, help="threshold for visualize results of detection")
@@ -58,7 +61,10 @@ def default_argument_parser():
         nargs=argparse.REMAINDER,
     )
 
-    return parser
+    args = parser.parse_args()
+    args.pre_trained_backbone = not args.scratch_backbone
+
+    return args
 
 def default_setup(cfg, args):
     output_dir = cfg.OUTPUT_DIR

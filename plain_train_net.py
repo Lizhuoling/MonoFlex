@@ -103,6 +103,8 @@ def setup(args):
         cfg.DATASETS.TEST = ("kitti_test",)
 
     cfg.START_TIME = datetime.datetime.strftime(datetime.datetime.now(), '%m-%d %H:%M:%S')
+    cfg.SEED = args.seed
+    cfg.MODEL.PRETRAIN = args.pre_trained_backbone
     default_setup(cfg, args)
 
     return cfg
@@ -139,7 +141,7 @@ def main(args):
     train(cfg, model, device, distributed)
 
 if __name__ == '__main__':
-    args = default_argument_parser().parse_args()
+    args = default_argument_parser()
     
     print("Command Line Args:", args)
 

@@ -1,13 +1,13 @@
 import os
 
 class DatasetCatalog():
-    DATA_DIR = "/opt/data1/zyp/"
+    DATA_DIR = "/home/twilight/twilight/Data/kitti/MonoFlex_kitti"
     DATASETS = {
         "kitti_train": {
-            "root": "kitti/object/training/",
+            "root": "training/",
         },
         "kitti_test": {
-            "root": "kitti/object/testing/",
+            "root": "testing/",
         },
 
     }

@@ -23,18 +23,19 @@ def build_backbone(cfg):
                 pretrained=cfg.MODEL.PRETRAIN,
                 down_ratio=cfg.MODEL.BACKBONE.DOWN_RATIO,
                 last_level=5,
+                model_dir = cfg.MODEL.BACKBONE_DIR
             )
     
     return model
 
 class DLASeg(nn.Module):
-    def __init__(self, base_name, pretrained, down_ratio, last_level):
+    def __init__(self, base_name, pretrained, down_ratio, last_level, model_dir = None):
         super(DLASeg, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
         
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
-        self.base = globals()[base_name](pretrained=pretrained)
+        self.base = globals()[base_name](pretrained=pretrained, model_dir = model_dir)
 
         channels = self.base.channels
         scales = [2 ** i for i in range(len(channels[self.first_level:]))]
@@ -330,12 +331,12 @@ class DLA(nn.Module):
         
         return y
 
-    def load_pretrained_model(self, data='imagenet', name='dla34', hash='ba72cf86'):
+    def load_pretrained_model(self, data='imagenet', name='dla34', hash='ba72cf86', model_dir = None):
         if name.endswith('.pth'):
             model_weights = torch.load(data + name)
         else:
             model_url = get_model_url(data, name, hash)
-            model_weights = model_zoo.load_url(model_url)
+            model_weights = model_zoo.load_url(model_url, model_dir)
         num_classes = len(model_weights[list(model_weights.keys())[-1]])
         self.fc = nn.Conv2d(
             self.channels[-1], num_classes,
@@ -343,12 +344,12 @@ class DLA(nn.Module):
         self.load_state_dict(model_weights)
 
 
-def dla34(pretrained=True, **kwargs):  # DLA-34
+def dla34(pretrained=True, model_dir = None, **kwargs):  # DLA-34
     model = DLA([1, 1, 1, 2, 2, 1],
                 [16, 32, 64, 128, 256, 512],
                 block=BasicBlock, **kwargs)
     if pretrained:
-        model.load_pretrained_model(data='imagenet', name='dla34', hash='ba72cf86')
+        model.load_pretrained_model(data='imagenet', name='dla34', hash='ba72cf86', model_dir = model_dir)
     
     return model
 

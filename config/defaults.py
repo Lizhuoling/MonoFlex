@@ -15,6 +15,7 @@ _C.MODEL.REDUCE_LOSS_NORM = True
 _C.MODEL.NORM = 'BN' # group normalization or batch normalization
 
 _C.MODEL.INPLACE_ABN = False
+_C.MODEL.BACKBONE_DIR = None
 
 # -----------------------------------------------------------------------------
 # INPUT

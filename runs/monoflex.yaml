@@ -57,6 +57,7 @@ MODEL:
 
   REDUCE_LOSS_NORM: True
   USE_SYNC_BN: True
+  BACKBONE_DIR: /home/twilight/twilight/Results/MonoFlex/pre_trained_backbone
 
 SOLVER:
   OPTIMIZER: 'adamw'

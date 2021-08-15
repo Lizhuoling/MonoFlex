@@ -17,7 +17,7 @@ from model.backbone.DCNv2.dcn_v2 import DCN
 
 BN_MOMENTUM = 0.1
 
-def build_backbone(cfg):
+def bulid_dlaseg(cfg):
 
     model = DLASeg(base_name=cfg.MODEL.BACKBONE.CONV_BODY,
                 pretrained=cfg.MODEL.PRETRAIN,
@@ -48,14 +48,13 @@ class DLASeg(nn.Module):
 
     def forward(self, x):
         # x: list of features with stride = 1, 2, 4, 8, 16, 32
-        x = self.base(x)
+        x = self.base(x)    # x is a list containing 6 feature maps with various resolutions.
         x = self.dla_up(x)
 
         y = []
         for i in range(self.last_level - self.first_level):
             y.append(x[i].clone())
         self.ida_up(y, 0, len(y))
-
         return y[-1]
 
 def get_model_url(data='imagenet', name='dla34', hash='ba72cf86'):
@@ -284,7 +283,6 @@ class DLA(nn.Module):
                            level_root=True, root_residual=residual_root)
         self.level5 = Tree(levels[5], block, channels[4], channels[5], 2,
                            level_root=True, root_residual=residual_root)
-
         # for m in self.modules():
         #     if isinstance(m, nn.Conv2d):
         #         n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels

@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import pdb
 
 from structures.image_list import to_image_list
 
@@ -28,8 +29,8 @@ class KeypointDetector(nn.Module):
             raise ValueError("In training mode, targets should be passed")
         
         images = to_image_list(images)
-        features = self.backbone(images.tensors)
-
+        features = self.backbone(images.tensors)    # features shape: (B, C, H, W).
+        
         if self.training:
             loss_dict, log_loss_dict = self.heads(features, targets)
             return loss_dict, log_loss_dict

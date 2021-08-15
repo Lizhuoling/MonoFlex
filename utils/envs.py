@@ -16,17 +16,25 @@ def seed_all_rng(seed=None):
     """
     logger = logging.getLogger('monoflex.seed')
 
-    if seed is None:
+    if seed is not None:
+        np.random.seed(seed)
+        torch.set_rng_state(torch.manual_seed(seed).get_state())
+        random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+    elif seed is None:
         seed = (
                 os.getpid()
                 # + int(datetime.now().strftime("%S%f"))
                 + int.from_bytes(os.urandom(2), "big")
         )
         logger.info("Using a generated random seed {}".format(seed))
+        np.random.seed(seed)
+        torch.set_rng_state(torch.manual_seed(seed).get_state())
+        random.seed(seed)
     else:
         pass
         # logger.info("Using a specified random seed {}".format(seed))
-    
-    np.random.seed(seed)
-    torch.set_rng_state(torch.manual_seed(seed).get_state())
-    random.seed(seed)

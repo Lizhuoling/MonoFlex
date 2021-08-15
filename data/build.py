@@ -1,6 +1,7 @@
 import logging
 import copy
 import bisect
+import sys
 import numpy as np
 
 import torch.utils.data
@@ -13,6 +14,8 @@ from . import datasets as D
 from . import samplers
 from .transforms import build_transforms
 from .collate_batch import BatchCollator
+
+GLOBAL_WORKER_SEED = -1
 
 def build_dataset(cfg, transforms, dataset_catalog, is_train=True):
     '''
@@ -56,6 +59,10 @@ def build_dataset(cfg, transforms, dataset_catalog, is_train=True):
     return [dataset]
 
 def make_data_loader(cfg, is_train=True):
+    global GLOBAL_WORKER_SEED
+    if cfg.SEED != -1:
+        GLOBAL_WORKER_SEED = cfg.SEED
+
     num_gpus = get_world_size()
     
     if is_train:
@@ -161,6 +168,9 @@ def trivial_batch_collator(batch):
     """
     return batch
 
-
 def worker_init_reset_seed(worker_id):
-    seed_all_rng(np.random.randint(2 ** 31) + worker_id)
+    global GLOBAL_WORKER_SEED
+    if GLOBAL_WORKER_SEED != -1:
+        seed_all_rng(GLOBAL_WORKER_SEED + worker_id)
+    else:
+        seed_all_rng(np.random.randint(2 ** 31) + worker_id)

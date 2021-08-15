@@ -13,6 +13,7 @@ from model.layers.utils import (
 	select_topk,
 	select_point_of_interest,
 )
+from model.layers.iou_loss import get_corners
 
 from model.layers.utils import Converter_key2channel
 from engine.visualize_infer import box_iou, box_iou_3d, box3d_to_corners
@@ -404,7 +405,7 @@ class PostProcessor(nn.Module):
 			pred_uncertainty = pred_regression_pois[:, self.key2channel('corner_uncertainty')].exp()
 			pred_depths = pred_depths[torch.arange(pred_depths.shape[0]), pred_uncertainty.argmin(dim=1)]
 
-		elif self.output_depth == 'combine':
+		elif self.output_depth in ['combine', 'hard', 'soft', 'mean']:
 			pred_direct_depths = self.anno_encoder.decode_depth(pred_depths_offset)
 			pred_keypoints_depths = self.anno_encoder.decode_depth_from_keypoints(pred_offset_3D, pred_keypoint_offset, pred_dimensions, targets['calib'])
 			pred_combined_depths = torch.cat((pred_direct_depths.unsqueeze(1), pred_keypoints_depths), dim=1)
@@ -412,7 +413,18 @@ class PostProcessor(nn.Module):
 			pred_direct_uncertainty = pred_regression_pois[:, self.key2channel('depth_uncertainty')].exp()
 			pred_keypoint_uncertainty = pred_regression_pois[:, self.key2channel('corner_uncertainty')].exp()
 			pred_combined_uncertainty = torch.cat((pred_direct_uncertainty, pred_keypoint_uncertainty), dim=1)
-			pred_depths = pred_combined_depths[torch.arange(pred_combined_depths.shape[0]), pred_combined_uncertainty.argmin(dim=1)]
+			depth_weights = 1 / pred_combined_uncertainty
+		
+			if self.output_depth == 'hard':
+				pred_depths = pred_combined_depths[torch.arange(pred_combined_depths.shape[0]), depth_weights.argmax(dim=1)]
+
+			elif self.output_depth == 'soft':
+				depth_weights = depth_weights / depth_weights.sum(dim=1, keepdim=True)
+				pred_depths = torch.sum(pred_combined_depths * depth_weights, dim=1)
+				
+			elif self.output_depth == 'mean':
+				pred_depths = pred_combined_depths.mean(dim=1)
+
 
 		batch_idxs = pred_depths.new_zeros(pred_depths.shape[0]).long()
 		pred_locations_offset = self.anno_encoder.decode_location_flatten(target_points, pred_offset_3D, target_depths, 

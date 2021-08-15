@@ -105,6 +105,7 @@ def setup(args):
     cfg.START_TIME = datetime.datetime.strftime(datetime.datetime.now(), '%m-%d %H:%M:%S')
     cfg.SEED = args.seed
     cfg.MODEL.PRETRAIN = args.pre_trained_backbone
+    cfg.MODEL.BACKBONE.CONV_BODY = args.backbone
     default_setup(cfg, args)
 
     return cfg
@@ -146,12 +147,12 @@ if __name__ == '__main__':
     print("Command Line Args:", args)
 
     # backup all python files when training
-    if not args.eval_only and args.output is not None:
-        sync_root('.', os.path.join(args.output, 'backup'))
-        import shutil
-        shutil.copy2(args.config_file, os.path.join(args.output, 'backup', os.path.basename(args.config_file)))
+    #if not args.eval_only and args.output is not None:
+        #sync_root('.', os.path.join(args.output, 'backup'))
+        #import shutil
+        #shutil.copy2(args.config_file, os.path.join(args.output, 'backup', os.path.basename(args.config_file)))
 
-        print("Finish backup all files")
+        #print("Finish backup all files")
 
     launch(
         main,

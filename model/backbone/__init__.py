@@ -1,1 +1,1 @@
-from .dla_dcn import build_backbone
+from .build_backbone import build_backbone

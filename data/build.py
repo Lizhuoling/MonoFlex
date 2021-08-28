@@ -170,7 +170,7 @@ def trivial_batch_collator(batch):
 
 def worker_init_reset_seed(worker_id):
     global GLOBAL_WORKER_SEED
-    if GLOBAL_WORKER_SEED != -1:
+    if GLOBAL_WORKER_SEED > 0:
         seed_all_rng(GLOBAL_WORKER_SEED + worker_id)
     else:
         seed_all_rng(np.random.randint(2 ** 31) + worker_id)

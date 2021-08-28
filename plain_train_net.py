@@ -88,6 +88,7 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     
     cfg.SOLVER.IMS_PER_BATCH = args.batch_size
+    cfg.SOLVER.BASE_LR = args.lr
     cfg.DATALOADER.NUM_WORKERS = args.num_work
     cfg.TEST.EVAL_DIS_IOUS = args.eval_iou
     cfg.TEST.EVAL_DEPTH = args.eval_depth 
@@ -145,14 +146,6 @@ if __name__ == '__main__':
     args = default_argument_parser()
     
     print("Command Line Args:", args)
-
-    # backup all python files when training
-    #if not args.eval_only and args.output is not None:
-        #sync_root('.', os.path.join(args.output, 'backup'))
-        #import shutil
-        #shutil.copy2(args.config_file, os.path.join(args.output, 'backup', os.path.basename(args.config_file)))
-
-        #print("Finish backup all files")
 
     launch(
         main,

@@ -27,6 +27,7 @@ def default_argument_parser():
                             help="evaluate the relationship between scores and IoU")
 
     parser.add_argument("--test", action="store_true", help="test mode")
+    parser.add_argument("--debug", action = "store_true", help = "When in the debug mode, the number of dataloader workers is 0.")
     parser.add_argument("--vis", action="store_true", help="visualize when evaluating")
     parser.add_argument(
         "--ckpt",
@@ -37,7 +38,7 @@ def default_argument_parser():
     parser.add_argument("--num_gpus", type=int, default=1, help="number of gpu")
     parser.add_argument("--batch_size", type=int, default=8, help="number of batch_size")
     parser.add_argument("--num_work", type=int, default=8, help="number of workers for dataloader")
-    parser.add_argument("--seed", type = int, default = 22, help = "The seed to fix training process.")
+    parser.add_argument("--seed", type = int, default = -1, help = "The seed to fix training process.")
     parser.add_argument("--scratch_backbone", action = "store_true", help = "Whether to use train backbone from scratch.")
     parser.add_argument("--output", type=str, default=None)
 
@@ -49,6 +50,7 @@ def default_argument_parser():
     parser.add_argument(
         "--backbone", type = str, default = 'dla34', help="The name of backbone."
     )
+    parser.add_argument("--lr", type = float, default = 1e-4, help = "Base learning rate.")
 
     # PyTorch still may leave orphan processes in multi-gpu training.
     # Therefore we use a deterministic way to obtain port,
@@ -66,6 +68,8 @@ def default_argument_parser():
 
     args = parser.parse_args()
     args.pre_trained_backbone = not args.scratch_backbone
+    if args.debug:
+        args.num_work = 0
 
     return args
 
@@ -87,7 +91,7 @@ def default_setup(cfg, args):
         logger.info(config_str)
 
     logger.info("Running with config:\n{}".format(cfg))
-
+    
     # make sure each worker has a different, yet deterministic seed if specified
     seed_all_rng(None if cfg.SEED < 0 else cfg.SEED + rank)
 

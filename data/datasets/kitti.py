@@ -275,11 +275,10 @@ class KITTIDataset(Dataset):
 		# the boundaries of the image after padding
 		x_min, y_min = int(np.ceil(pad_size[0] / self.down_ratio)), int(np.ceil(pad_size[1] / self.down_ratio))
 		x_max, y_max = (pad_size[0] + img_w - 1) // self.down_ratio, (pad_size[1] + img_h - 1) // self.down_ratio
-
 		if self.enable_edge_fusion:
 			# generate edge_indices for the edge fusion module
 			input_edge_indices = np.zeros([self.max_edge_length, 2], dtype=np.int64)
-			edge_indices = self.get_edge_utils((img_w, img_h), pad_size).numpy()
+			edge_indices = self.get_edge_utils((img_w, img_h), pad_size, down_ratio = self.down_ratio).numpy()
 			input_edge_count = edge_indices.shape[0]
 			input_edge_indices[:edge_indices.shape[0]] = edge_indices
 			input_edge_count = input_edge_count - 1 # explain ? 

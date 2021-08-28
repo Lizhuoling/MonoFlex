@@ -5,9 +5,10 @@ from functools import partial
 import torch
 import torch.nn as nn
 
-def build_vit(patch_size=4, **kwargs):
+def build_vit(cfg, **kwargs):
+    img_size = (cfg.INPUT.HEIGHT_TRAIN, cfg.INPUT.WIDTH_TRAIN)
     model = VisionTransformer(
-        patch_size=patch_size, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
+        img_size = img_size, patch_size=cfg.MODEL.BACKBONE.DOWN_RATIO, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -90,9 +91,11 @@ class Attention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+    def __init__(self, dim, num_heads, input_resolution, window_size = 4, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
+        self.input_resolution = input_resolution
+        self.window_size = window_size
         self.norm1 = norm_layer(dim)
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
@@ -102,20 +105,67 @@ class Block(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x, return_attention=False):
-        y, attn = self.attn(self.norm1(x))
+        '''
+        Input:
+            x shape: (B, L, C) = (B, Hp * Wp) = (B, H/patch_size * W/patch_size, C)
+        '''
+        B, L, C = x.shape
+        assert L == self.input_resolution[0] * self.input_resolution[1]
+        windows_x = x.reshape(B, self.input_resolution[0], self.input_resolution[1], C)
+        windows_x = self.window_partition(windows_x, window_size = self.window_size)    # Left x shape: (B * num_windows, window_size, window_size, C)
+        windows_x = windows_x.view(-1, self.window_size * self.window_size, C)
+        y, attn = self.attn(self.norm1(windows_x))  # y shape: (B * num_windows, window_size * window_size, C). attn shape: (B * num_windows, window_size * window_size, window_size * window_size)
+        y = self.window_restore(y, self.input_resolution, self.window_size) # Left y shape: (B, Hp * Wp, C)
         if return_attention:
+            attn = self.window_restore(attn, self.input_resolution, self.window_size)   # Left attn shape: (B, Hp * Wp, window_size * window_size)
             return attn
         x = x + self.drop_path(y)
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
+    
+    def window_partition(self, x, window_size):
+        """
+        Description:
+            Devide the input tensor with shape: (B, H, W, C) as (B * H/window_size * W/window_size, window_size, window_size, C)
+        Input
+            x: (B, H, W, C)
+            window_size (int): window size
+        Output:
+            windows: (B * num_windows, window_size, window_size, C)
+        """
+        B, H, W, C = x.shape
+        assert H % window_size ==0 and W % window_size == 0
+        x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
+        windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
+        return windows
+
+    def window_restore(self, x, ori_resolution, window_size):
+        '''
+        Description:
+            Restore the window partitioned x back.
+        Input:
+            x: The embbeding produced by attention block. shape: (B * num_windows, window_size * window_size, C).
+        Output:
+            y shape: (B, Hp * Wp, C) = (B, H/patch_size * W/patch_size, C)
+        '''
+        assert len(ori_resolution) == 2 and len(x.shape) == 3
+        C = x.shape[2]
+        H_window_num, W_window_num = ori_resolution[0] // window_size, ori_resolution[1] // window_size
+        x = x.reshape(-1, H_window_num, W_window_num, window_size, window_size, C)
+        B = x.shape[0]
+        x = x.permute(0, 1, 3, 2, 4, 5) # Left x shape: (B, H // window_size, window_size, W // window_size, window_size, C)
+        y = x.reshape(B, ori_resolution[0] * ori_resolution[1], C)
+        return y
 
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
+    def __init__(self, img_size=(224, 224), patch_size=16, in_chans=3, embed_dim=768):
         super().__init__()
-        num_patches = (img_size // patch_size) * (img_size // patch_size)
+        if (img_size[0] % patch_size != 0) or (img_size[1] % patch_size != 0):
+            raise Exception('The size of image must be divisible by patch_size.')
+        num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = num_patches
@@ -124,12 +174,12 @@ class PatchEmbed(nn.Module):
     def forward(self, x):
         B, C, H, W = x.shape
         x = self.proj(x).flatten(2).transpose(1, 2)
-        return x    # x shape: (B, L, C)
+        return x    # x shape: (B, L, C) = (B, H/patch_size * W/patch_size, C)
 
 
 class VisionTransformer(nn.Module):
     """ Vision Transformer """
-    def __init__(self, img_size=[224], patch_size=16, in_chans=3, num_classes=0, embed_dim=768, depth=12,
+    def __init__(self, img_size, patch_size=16, in_chans=3, num_classes=0, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
                  drop_path_rate=0., norm_layer=nn.LayerNorm, **kwargs):
         super().__init__()
@@ -138,27 +188,26 @@ class VisionTransformer(nn.Module):
         self.out_channels = embed_dim
 
         self.patch_embed = PatchEmbed(
-            img_size=img_size[0], patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
+            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
         
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         
+        block_input_resolution = (img_size[0] // patch_size, img_size[1] // patch_size)
         self.blocks = nn.ModuleList([
             Block(
-                dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
+                dim=embed_dim, num_heads=num_heads, input_resolution = block_input_resolution, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
-
+        
         # Classifier head
         self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-        trunc_normal_(self.pos_embed, std=.02)
-        trunc_normal_(self.cls_token, std=.02)
+        trunc_normal_(self.pos_embed, std=.02)  
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -170,48 +219,21 @@ class VisionTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def interpolate_pos_encoding(self, x, w, h):
-        npatch = x.shape[1] - 1
-        N = self.pos_embed.shape[1] - 1
-        if npatch == N and w == h:
-            return self.pos_embed
-        class_pos_embed = self.pos_embed[:, 0]
-        patch_pos_embed = self.pos_embed[:, 1:]
-        dim = x.shape[-1]
-        w0 = w // self.patch_embed.patch_size
-        h0 = h // self.patch_embed.patch_size
-        # we add a small number to avoid floating point error in the interpolation
-        # see discussion at https://github.com/facebookresearch/dino/issues/8
-        w0, h0 = w0 + 0.1, h0 + 0.1
-        patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed.reshape(1, int(math.sqrt(N)), int(math.sqrt(N)), dim).permute(0, 3, 1, 2),
-            scale_factor=(w0 / math.sqrt(N), h0 / math.sqrt(N)),
-            mode='bicubic',
-        )
-        assert int(w0) == patch_pos_embed.shape[-2] and int(h0) == patch_pos_embed.shape[-1]
-        patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
-        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
-
     def prepare_tokens(self, x):
         B, nc, w, h = x.shape
-        x = self.patch_embed(x)  # patch linear embedding. left x shape: (B, C, patch_num)
-        # add the [CLS] token to the embed patch tokens
-        cls_tokens = self.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)   # left x shape: (B, C + 1, patch_num)
+        x = self.patch_embed(x)  # patch linear embedding. left x shape: (B, patch_num, C) = (B, H/patch_size * W/patch_size, C)
         # add positional encoding to each token
-        x = x + self.interpolate_pos_encoding(x, w, h)
+        x = x + self.pos_embed
         return self.pos_drop(x)
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x = self.prepare_tokens(x)  # Right x shape: (B, C, H, W). Left x shape: (B, C + 1, patch_num)
+        x = self.prepare_tokens(x)  # Right x shape: (B, C, H, W). Left x shape: (B, patch_num, C)
         for blk in self.blocks:
             x = blk(x)
-        x = self.norm(x)    # Left x shape: (B, C + 1, patch_num)
-        x = x[:, 1:, :]  # Remove CLS token. Left x shape: (B, C, patch_num)
-        x = x.reshape(B, -1, H / self.patch_size, W / self.patch_size)
-        pdb.set_trace()
-        return x
+        x = self.norm(x)    # Left x shape: (B, patch_num, C)
+        x = x.reshape(B, H // self.patch_size, W // self.patch_size, -1)
+        return x.permute(0, 3, 1, 2)   # Convert the tensor format as (B, C, H, W)
 
     def get_last_selfattention(self, x):
         x = self.prepare_tokens(x)

@@ -17,9 +17,8 @@ from model.backbone.DCNv2.dcn_v2 import DCN
 
 BN_MOMENTUM = 0.1
 
-def bulid_dlaseg(cfg):
-
-    model = DLASeg(base_name=cfg.MODEL.BACKBONE.CONV_BODY,
+def bulid_dla_former(cfg):
+    model = DLA_Former(base_name=cfg.MODEL.BACKBONE.CONV_BODY,
                 pretrained=cfg.MODEL.PRETRAIN,
                 down_ratio=cfg.MODEL.BACKBONE.DOWN_RATIO,
                 last_level=5,
@@ -28,14 +27,14 @@ def bulid_dlaseg(cfg):
     
     return model
 
-class DLASeg(nn.Module):
+class DLA_Former(nn.Module):
     def __init__(self, base_name, pretrained, down_ratio, last_level, model_dir = None):
-        super(DLASeg, self).__init__()
+        super(DLA_Former, self).__init__()
         assert down_ratio in [2, 4, 8, 16]
         
         self.first_level = int(np.log2(down_ratio))
         self.last_level = last_level
-        self.base = globals()[base_name](pretrained=pretrained, model_dir = model_dir)
+        self.base = dla_former_backbone(pretrained=pretrained, model_dir = model_dir)
 
         channels = self.base.channels
         scales = [2 ** i for i in range(len(channels[self.first_level:]))]
@@ -66,6 +65,30 @@ def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
+class inverted_conv(nn.Module):
+    def __init__(self, inplanes, planes, stride=1, dilation=1, expansion = 2):
+        super(inverted_conv, self).__init__()
+        expansion_planes = int(inplanes * expansion)
+
+        self.conv1 = nn.Conv2d(inplanes, expansion_planes, kernel_size=1,
+                                stride = 1, padding = 0, bias = False, dilation = dilation)
+        self.bn1 = nn.BatchNorm2d(expansion_planes, momentum=BN_MOMENTUM)
+
+        self.conv2 = nn.Conv2d(expansion_planes, expansion_planes, kernel_size=3, groups = expansion_planes,
+                                stride = stride, padding = dilation, bias = False, dilation = dilation)
+        self.bn2 = nn.BatchNorm2d(expansion_planes, momentum=BN_MOMENTUM)
+
+        self.conv3 = nn.Conv2d(expansion_planes, planes, kernel_size=1,
+                                stride = 1, padding = 0, bias = False, dilation = dilation)
+        self.bn3 = nn.BatchNorm2d(planes, momentum=BN_MOMENTUM)
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        expansion_x = self.relu(self.bn1(self.conv1(x)))
+        proj_x = self.relu(self.bn2(self.conv2(expansion_x)))
+        out = self.bn3(self.conv3(proj_x))
+        return out
 
 class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, dilation=1):
@@ -84,7 +107,7 @@ class BasicBlock(nn.Module):
     def forward(self, x, residual=None):
         if residual is None:
             residual = x
-
+        pdb.set_trace()
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
@@ -342,9 +365,10 @@ class DLA(nn.Module):
         self.load_state_dict(model_weights)
 
 
-def dla34(pretrained=True, model_dir = None, **kwargs):  # DLA-34
+def dla_former_backbone(pretrained=True, model_dir = None, channel_list = [16, 32, 64, 128, 256, 512],
+     **kwargs):
     model = DLA([1, 1, 1, 2, 2, 1],
-                [16, 32, 64, 128, 256, 512],
+                channel_list,
                 block=BasicBlock, **kwargs)
     if pretrained:
         model.load_pretrained_model(data='imagenet', name='dla34', hash='ba72cf86', model_dir = model_dir)
@@ -459,10 +483,3 @@ class Interpolate(nn.Module):
     def forward(self, x):
         x = F.interpolate(x, scale_factor=self.scale, mode=self.mode, align_corners=False)
         return x
-
-if __name__ == '__main__':
-    model = build_backbone(num_layers=34).cuda()
-    x = torch.rand(2, 3, 384, 1280).cuda()
-    y = model(x)
-
-    print(y.shape)

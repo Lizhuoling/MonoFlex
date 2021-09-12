@@ -15,7 +15,7 @@ from data.datasets.evaluation import generate_kitti_3d_detection
 from .visualize_infer import show_image_with_boxes, show_image_with_boxes_test
 
 def compute_on_dataset(model, data_loader, device, predict_folder, timer=None, vis=False, 
-                        eval_score_iou=False, eval_depth=False, eval_trunc_recall=False):
+                        eval_score_iou=False, eval_depth=False, eval_trunc_recall=False, vis_folder = None, save_all_results = True):
     
     model.eval()
     cpu_device = torch.device("cpu")
@@ -27,7 +27,7 @@ def compute_on_dataset(model, data_loader, device, predict_folder, timer=None, v
         for idx, batch in enumerate(tqdm(data_loader)):
             images, targets, image_ids = batch["images"], batch["targets"], batch["img_ids"]
             images = images.to(device)
-
+            
             # extract label data for visualize
             vis_target = targets[0]
             targets = [target.to(device) for target in targets]
@@ -46,14 +46,16 @@ def compute_on_dataset(model, data_loader, device, predict_folder, timer=None, v
 
             if dis_iou is not None:
                 for key in dis_iou: dis_ious[key] += dis_iou[key].tolist()
-
+                
             if vis: show_image_with_boxes(vis_target.get_field('ori_img'), output, vis_target, 
-                                    visualize_preds, vis_scores=eval_utils['vis_scores'])
+                                    visualize_preds, vis_scores=eval_utils['vis_scores'], vis_folder = vis_folder)
 
-            # generate txt files for predicted objects
-            predict_txt = image_ids[0] + '.txt'
-            predict_txt = os.path.join(predict_folder, predict_txt)
-            generate_kitti_3d_detection(output, predict_txt)
+            # For the validation of the training phase, $save_all_results is True and all files should be saved.
+            # During the validation of evaluation phase, $save_all_results is False and only the files containining detected tartgets are saved.
+            if save_all_results or output.shape[0] != 0:
+                predict_txt = image_ids[0] + '.txt'
+                predict_txt = os.path.join(predict_folder, predict_txt)
+                generate_kitti_3d_detection(output, predict_txt)
 
     # disentangling IoU
     for key, value in dis_ious.items():
@@ -71,7 +73,9 @@ def inference(
         output_folder=None,
         metrics=['R40'],
         vis=False,
+        vis_folder = None,
         eval_score_iou=False,
+        save_all_results = True
 ):
     device = torch.device(device)
     num_devices = comm.get_world_size()
@@ -85,8 +89,12 @@ def inference(
     inference_timer = Timer()
     total_timer.tic()
 
+    if vis_folder == None:
+        vis_folder = os.path.join(output_folder, 'vis')
+    os.makedirs(vis_folder, exist_ok = True)
+
     dis_ious = compute_on_dataset(model, data_loader, device, predict_folder, 
-                                inference_timer, vis, eval_score_iou)
+                                inference_timer, vis, eval_score_iou, vis_folder = vis_folder, save_all_results = save_all_results)
     comm.synchronize()
 
     for key, value in dis_ious.items():
@@ -99,6 +107,10 @@ def inference(
             total_time_str, total_time * num_devices / len(dataset), num_devices
         )
     )
+    
+    if save_all_results is False:
+        return None, None, None
+
     total_infer_time = get_time_str(inference_timer.total_time)
     logger.info(
         "Model inference time: {} ({} s / img per device, on {} devices)".format(

@@ -1,7 +1,8 @@
-exp_id=Official_seed22_B
+exp_id=MonoFlex_direct_uncern2
 
-CUDA_VISIBLE_DEVICES=3 python -B plain_train_net.py \
-    --config runs/monoflex.yaml \
-    --ckpt ./output/$exp_id/model_moderate_best_soft.pth  \
-    --eval \
-    #--eval_iou \
+python3 ./kitti-object-eval-python/evaluate.py evaluate \
+    --label_path /home/twilight/twilight/Data/kitti/MonoFlex_kitti/training/label_2 \
+    --label_split_file /home/twilight/twilight/Data/kitti/MonoFlex_kitti/training/ImageSets/val.txt \
+    --current_class 0,1,2 \
+    --coco False \
+    --result_path output/$exp_id/inference/kitti_train/data \

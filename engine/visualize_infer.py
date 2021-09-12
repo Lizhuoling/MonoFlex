@@ -145,12 +145,12 @@ def show_image_with_boxes_test(image, output, target, visualize_preds):
 	plt.show()
 
 # heatmap and 3D detections
-def show_image_with_boxes(image, output, target, visualize_preds, vis_scores=None):
+def show_image_with_boxes(image, output, target, visualize_preds, vis_scores=None, vis_folder = None):
 	# output Tensor:
 	# clses, pred_alphas, pred_box2d, pred_dimensions, pred_locations, pred_rotys, scores
 	image = image.numpy().astype(np.uint8)
 	output = output.cpu().float().numpy()
-
+	
 	if vis_scores is not None:
 		output[:, -1] = vis_scores.squeeze().cpu().float().numpy()
 	
@@ -160,7 +160,7 @@ def show_image_with_boxes(image, output, target, visualize_preds, vis_scores=Non
 	ID_TYPE_CONVERSION = {k : v for v, k in TYPE_ID_CONVERSION.items()}
 
 	# predictions
-	clses = output[:, 0]
+	clses = output[:, 0].astype(np.uint8)
 	box2d = output[:, 2:6]
 	dims = output[:, 6:9]
 	locs = output[:, 9:12]
@@ -184,9 +184,29 @@ def show_image_with_boxes(image, output, target, visualize_preds, vis_scores=Non
 
 	print('detections / gt objs: {} / {}'.format(box2d.shape[0], num_gt))
 
+	# The heatmap of backbone
+	backbone_heatmap = np.asarray(visualize_preds['backbone_map'].cpu())
+	backbone_heatmap = cv2.resize(backbone_heatmap, (image.shape[1], image.shape[0]))
+
+	# The heatmap of classification head.
 	pred_heatmap = visualize_preds['heat_map']
 	all_heatmap = np.asarray(pred_heatmap[0, 0, ...].cpu())
 	all_heatmap = cv2.resize(all_heatmap, (image.shape[1], image.shape[0]))
+
+	# Detpth uncertainty map
+	depth_uncern_map = np.asarray(visualize_preds['depth_uncertainty'][0].cpu())
+	depth_uncern_map = cv2.resize(depth_uncern_map, (image.shape[1], image.shape[0]))
+
+	# Generate mix map
+	heatmap = 1 - np.expand_dims(depth_uncern_map, axis = 2).astype(np.float32)
+	heatmap = heatmap - np.min(heatmap) 
+	heatmap = heatmap / np.max(heatmap)
+	#heatmap = np.concatenate((heatmap, np.ones((heatmap.shape[0], heatmap.shape[1], 2), dtype = np.float32)), axis = 2)
+	ori_image = image.astype(np.float32) 
+	ori_image = ori_image - np.min(ori_image)
+	ori_image = ori_image / np.max(ori_image)
+	mix_map = 0.7 * heatmap + 0.3 * ori_image
+	mix_map = ((mix_map / np.max(mix_map)) * 255).astype(np.uint8)
 
 	img2 = Visualizer(image.copy()) # for 2d bbox
 	img3 = image.copy() # for 3d bbox
@@ -199,6 +219,7 @@ def show_image_with_boxes(image, output, target, visualize_preds, vis_scores=Non
 	# plot prediction 
 	for i in range(box2d.shape[0]):
 		img2.draw_box(box_coord=box2d[i], edge_color='g')
+		
 		img2.draw_text(text='{}, {:.3f}'.format(ID_TYPE_CONVERSION[clses[i]], score[i]), position=(int(box2d[i, 0]), int(box2d[i, 1])))
 
 		corners3d = box3d_to_corners(locs[i], dims[i], rotys[i])
@@ -235,14 +256,14 @@ def show_image_with_boxes(image, output, target, visualize_preds, vis_scores=Non
 		img4 = draw_bev_box3d(img4, corners3d[np.newaxis, :], thickness=2, color=gt_color, scores=None)
 
 	img2 = img2.output.get_image()
-	heat_mixed = img2.astype(np.float32) / 255 + all_heatmap[..., np.newaxis] * np.array([1, 0, 0]).reshape(1, 1, 3)
 	img4 = cv2.resize(img4, (img3.shape[0], img3.shape[0]))
 	stack_img = np.concatenate([img3, img4], axis=1)
 
 	plt.figure(figsize=(12, 8))
 	plt.subplot(211)
-	plt.imshow(all_heatmap); plt.title('heatmap'); plt.axis('off')
+	plt.imshow(mix_map); plt.title('heatmap'); plt.axis('off')	# cmap = "magma"
 	plt.subplot(212)
 	plt.imshow(stack_img); plt.title('2D/3D boxes'); plt.axis('off')
 	plt.suptitle('Detections')
-	plt.show()
+	plt.savefig(os.path.join(vis_folder, target.img_name))
+	#plt.show()

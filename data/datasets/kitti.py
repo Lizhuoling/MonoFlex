@@ -257,7 +257,7 @@ class KITTIDataset(Dataset):
 			objs = None if self.split == 'test' else self.get_label_objects(idx)
 
 			use_right_img = False
-
+		
 		original_idx = self.image_files[idx][:6]
 		objs = self.filtrate_objects(objs) # remove objects of irrelevant classes
 		 
@@ -491,8 +491,7 @@ class KITTIDataset(Dataset):
 		# img3 = show_image_with_boxes(img, cls_ids, target_centers, bboxes.copy(), keypoints, reg_mask, 
 		# 							offset_3D, self.down_ratio, pad_size, orientations, vis=True)
 		# show_heatmap(img, heat_map, index=original_idx)
-
-		target = ParamsList(image_size=img.size, is_train=self.is_train) 
+		target = ParamsList(image_size=img.size, is_train=self.is_train, img_name = self.image_files[idx]) 
 		target.add_field("cls_ids", cls_ids)
 		target.add_field("target_centers", target_centers)
 		target.add_field("keypoints", keypoints)
@@ -514,7 +513,7 @@ class KITTIDataset(Dataset):
 		target.add_field("gt_bboxes", gt_bboxes) # for validation visualization
 		target.add_field("occlusions", occlusions)
 		target.add_field("truncations", truncations)
-
+		
 		if self.enable_edge_fusion:
 			target.add_field('edge_len', input_edge_count)
 			target.add_field('edge_indices', input_edge_indices)

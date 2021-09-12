@@ -1,5 +1,6 @@
 import os
 import pdb
+import shutil
 
 from data import build_test_loader
 from engine.inference import inference, inference_all_depths
@@ -14,11 +15,12 @@ def run_test(cfg, model, vis, eval_score_iou, eval_all_depths=True):
     if cfg.OUTPUT_DIR:
         for idx, dataset_name in enumerate(dataset_names):
             output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", dataset_name)
-            mkdir(output_folder)
+            shutil.rmtree(output_folder)
+            os.mkdir(output_folder)
             output_folders[idx] = output_folder
     
     data_loaders_val = build_test_loader(cfg)
-
+    
     inference_fnc = inference_all_depths if eval_all_depths else inference
     for output_folder, dataset_name, data_loader_val in zip(output_folders, dataset_names, data_loaders_val):
         result_dict, result_str, dis_ious = inference_fnc(
@@ -30,6 +32,8 @@ def run_test(cfg, model, vis, eval_score_iou, eval_all_depths=True):
             output_folder=output_folder,
             metrics=cfg.TEST.METRIC,
             vis=vis,
+            vis_folder = os.path.join(cfg.OUTPUT_DIR, 'vis'),
             eval_score_iou=eval_score_iou,
+            save_all_results = False
         )
         comm.synchronize()

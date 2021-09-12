@@ -14,6 +14,7 @@ from model.layers.utils import (
 	select_point_of_interest,
 )
 from model.layers.iou_loss import get_corners
+from model.utils import error_from_uncertainty
 
 from model.layers.utils import Converter_key2channel
 from engine.visualize_infer import box_iou, box_iou_3d, box3d_to_corners
@@ -30,6 +31,7 @@ class PostProcessor(nn.Module):
 		
 		super(PostProcessor, self).__init__()
 
+		self.cfg = cfg
 		self.anno_encoder = anno_encoder
 		self.key2channel = key2channel
 
@@ -42,11 +44,13 @@ class PostProcessor(nn.Module):
 		self.output_height = cfg.INPUT.HEIGHT_TRAIN // cfg.MODEL.BACKBONE.DOWN_RATIO
 		self.output_depth = cfg.MODEL.HEAD.OUTPUT_DEPTH
 		self.pred_2d = cfg.TEST.PRED_2D
+		self.uncertainty_range = cfg.MODEL.HEAD.UNCERTAINTY_RANGE
 
 		self.pred_direct_depth = 'depth' in self.key2channel.keys
 		self.depth_with_uncertainty = 'depth_uncertainty' in self.key2channel.keys
 		self.regress_keypoints = 'corner_offset' in self.key2channel.keys
 		self.keypoint_depth_with_uncertainty = 'corner_uncertainty' in self.key2channel.keys
+		self.corner_loss_uncern = 'corner_loss_uncertainty' in self.key2channel.keys
 
 		# use uncertainty to guide the confidence
 		self.uncertainty_as_conf = cfg.TEST.UNCERTAINTY_AS_CONFIDENCE
@@ -108,6 +112,8 @@ class PostProcessor(nn.Module):
 			result = scores.new_zeros(0, 14)
 			visualize_preds['keypoints'] = scores.new_zeros(0, 20)
 			visualize_preds['proj_center'] = scores.new_zeros(0, 2)
+			if self.depth_with_uncertainty:
+				visualize_preds['depth_uncertainty'] = pred_regression[:, self.key2channel('depth_uncertainty'), ...].squeeze(1)
 			eval_utils = {'dis_ious': dis_ious, 'depth_errors': depth_errors, 'vis_scores': scores.new_zeros(0),
 					'uncertainty_conf': scores.new_zeros(0), 'estimated_depth_error': scores.new_zeros(0)}
 			
@@ -131,7 +137,7 @@ class PostProcessor(nn.Module):
 		if self.pred_direct_depth:
 			pred_depths_offset = pred_regression_pois[:, self.key2channel('depth')].squeeze(-1)
 			pred_direct_depths = self.anno_encoder.decode_depth(pred_depths_offset)
-
+		
 		if self.depth_with_uncertainty:
 			pred_direct_uncertainty = pred_regression_pois[:, self.key2channel('depth_uncertainty')].exp()
 			visualize_preds['depth_uncertainty'] = pred_regression[:, self.key2channel('depth_uncertainty'), ...].squeeze(1)
@@ -146,6 +152,10 @@ class PostProcessor(nn.Module):
 		if self.keypoint_depth_with_uncertainty:
 			pred_keypoint_uncertainty = pred_regression_pois[:, self.key2channel('corner_uncertainty')].exp()
 
+		if self.corner_loss_uncern:
+			corner_loss_uncern = pred_regression_pois[:, self.key2channel('corner_loss_uncertainty')]
+			corner_loss_uncern = torch.clamp(corner_loss_uncern, min=self.uncertainty_range[0], max=self.uncertainty_range[1]).exp()
+
 		estimated_depth_error = None
 
 		if self.output_depth == 'direct':
@@ -154,7 +164,7 @@ class PostProcessor(nn.Module):
 			if self.depth_with_uncertainty: estimated_depth_error = pred_direct_uncertainty.squeeze(dim=1)
 		
 		elif self.output_depth.find('keypoints') >= 0:
-			if self.output_depth == 'keypoints_avg':
+			if self.output_depth == 'keypoints_mean':
 				pred_depths = pred_keypoints_depths.mean(dim=1)
 				if self.keypoint_depth_with_uncertainty: estimated_depth_error = pred_keypoint_uncertainty.mean(dim=1)
 
@@ -221,6 +231,12 @@ class PostProcessor(nn.Module):
 		# change dimension back to h,w,l
 		pred_dimensions = pred_dimensions.roll(shifts=-1, dims=1)
 
+		if self.cfg.TEST.UNCERTAINTY_3D == '3d_confidence':
+			pass
+		elif self.cfg.TEST.UNCERTAINTY_3D == "uncern_soft_avg":
+			uncern_group = torch.cat((estimated_depth_error.unsqueeze(1), corner_loss_uncern), dim = 1)
+			estimated_depth_error = error_from_uncertainty(uncern_group)
+
 		# the uncertainty of depth estimation can reflect the confidence for 3D object detection
 		vis_scores = scores.clone()
 		if self.uncertainty_as_conf and estimated_depth_error is not None:
@@ -234,7 +250,7 @@ class PostProcessor(nn.Module):
 		
 		eval_utils = {'dis_ious': dis_ious, 'depth_errors': depth_errors, 'uncertainty_conf': uncertainty_conf,
 					'estimated_depth_error': estimated_depth_error, 'vis_scores': vis_scores}
-		
+
 		return result, eval_utils, visualize_preds
 
 	def get_oracle_depths(self, pred_bboxes, pred_clses, pred_combined_depths, pred_combined_uncertainty, target):

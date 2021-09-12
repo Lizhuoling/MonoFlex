@@ -50,7 +50,6 @@ def default_argument_parser():
     parser.add_argument(
         "--backbone", type = str, default = 'dla34', help="The name of backbone."
     )
-    parser.add_argument("--lr", type = float, default = 1e-4, help = "Base learning rate.")
 
     # PyTorch still may leave orphan processes in multi-gpu training.
     # Therefore we use a deterministic way to obtain port,

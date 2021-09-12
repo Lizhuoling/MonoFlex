@@ -24,8 +24,8 @@ INPUT:
 MODEL:
   INPLACE_ABN: True
   HEAD:
-    REGRESSION_HEADS: [['2d_dim'], ['3d_offset'], ['corner_offset'], ['corner_uncertainty'], ['3d_dim'], ['ori_cls', 'ori_offset'], ['depth'], ['depth_uncertainty']]
-    REGRESSION_CHANNELS: [[4, ], [2, ], [20], [3], [3, ], [8, 8], [1, ], [1, ]]
+    REGRESSION_HEADS: [['2d_dim'], ['3d_offset'], ['corner_offset'], ['corner_uncertainty'], ['3d_dim'], ['ori_cls', 'ori_offset']]
+    REGRESSION_CHANNELS: [[4, ], [2, ], [20], [3], [3, ], [8, 8]]
 
     ENABLE_EDGE_FUSION: True
     TRUNCATION_OUTPUT_FUSION: 'add'
@@ -39,10 +39,10 @@ MODEL:
 
     MODIFY_INVALID_KEYPOINT_DEPTH: True
 
-    CORNER_LOSS_DEPTH: 'soft_combine'
-    LOSS_NAMES: ['hm_loss', 'bbox_loss', 'depth_loss', 'offset_loss', 'orien_loss', 'dims_loss', 'corner_loss', 'keypoint_loss', 'keypoint_depth_loss', 'trunc_offset_loss', 'weighted_avg_depth_loss']
-    LOSS_UNCERTAINTY: [True, True, False, True, True, True, True, True, False, True, True]
-    INIT_LOSS_WEIGHT: [1, 1, 1, 0.5, 1, 1, 0.2, 1.0, 0.2, 0.1, 0.2]
+    CORNER_LOSS_DEPTH: 'keypoint_avg'
+    LOSS_NAMES: ['hm_loss', 'bbox_loss', 'offset_loss', 'orien_loss', 'dims_loss', 'corner_loss', 'keypoint_loss', 'keypoint_depth_loss', 'trunc_offset_loss', 'weighted_avg_depth_loss']
+    LOSS_UNCERTAINTY: [True, True, True, True, True, True, False, True, True]
+    INIT_LOSS_WEIGHT: [1, 1, 0.5, 1, 1, 0.2, 1.0, 0.2, 0.1, 0.2]
     
     CENTER_MODE: 'max'
     HEATMAP_TYPE: 'centernet'
@@ -55,7 +55,7 @@ MODEL:
 
     UNCERTAINTY_INIT: True
   BACKBONE:
-    DOWN_RATIO: 8
+    DOWN_RATIO: 4
 
   REDUCE_LOSS_NORM: True
   USE_SYNC_BN: True
@@ -63,7 +63,7 @@ MODEL:
 
 SOLVER:
   OPTIMIZER: 'adamw'
-  BASE_LR: 3e-4
+  BASE_LR: 1e-4
   WEIGHT_DECAY: 1e-5
   LR_WARMUP: False
   WARMUP_STEPS: 2000

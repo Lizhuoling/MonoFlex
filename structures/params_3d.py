@@ -7,9 +7,10 @@ class ParamsList():
     This class represents labels of specific object.
     """
 
-    def __init__(self, image_size, is_train=True):
+    def __init__(self, image_size, is_train=True, img_name = None):
         self.size = image_size
         self.is_train = is_train
+        self.img_name = img_name
         self.extra_fields = {}
 
     def add_field(self, field, field_data):
@@ -34,7 +35,7 @@ class ParamsList():
             self.extra_fields[k] = v
 
     def to(self, device):
-        target = ParamsList(self.size, self.is_train)
+        target = ParamsList(self.size, self.is_train, self.img_name)
         for k, v in self.extra_fields.items():
             if hasattr(v, "to"):
                 v = v.to(device)

@@ -73,6 +73,9 @@ class Loss_Computation():
 		self.compute_keypoint_corner = 'corner_offset' in self.key2channel.keys
 		self.corner_with_uncertainty = 'corner_uncertainty' in self.key2channel.keys
 
+		self.dim_uncern = 'dim_uncertainty' in self.key2channel.keys
+		self.corner_loss_uncern = 'corner_loss_uncertainty' in self.key2channel.keys
+
 		self.uncertainty_weight = cfg.MODEL.HEAD.UNCERTAINTY_WEIGHT # 1.0
 		self.keypoint_xy_weights = cfg.MODEL.HEAD.KEYPOINT_XY_WEIGHT # [1, 1]
 		self.keypoint_norm_factor = cfg.MODEL.HEAD.KEYPOINT_NORM_FACTOR # 1.0
@@ -217,6 +220,16 @@ class Loss_Computation():
 			preds['keypoints'] = pred_keypoints_3D			
 			preds['keypoints_depths'] = pred_keypoints_depths_3D
 
+		# Optimize dimension with uncertainty.
+		if self.dim_uncern:
+			dim_uncern = pred_regression_pois_3D[:, self.key2channel('dim_uncertainty')]
+			preds['dim_uncern'] = torch.clamp(dim_uncern, min=self.uncertainty_range[0], max=self.uncertainty_range[1]).exp()
+		
+		# Optimize corner coordinate loss with uncertainty
+		if self.corner_loss_uncern:
+			corner_loss_uncern = pred_regression_pois_3D[:, self.key2channel('corner_loss_uncertainty')]
+			preds['corner_loss_uncern'] = torch.clamp(corner_loss_uncern, min=self.uncertainty_range[0], max=self.uncertainty_range[1]).exp()
+
 		# predict the uncertainties of the solved depths from groups of keypoints
 		if self.corner_with_uncertainty:
 			preds['corner_offset_uncertainty'] = pred_regression_pois_3D[:, self.key2channel('corner_uncertainty')]
@@ -235,6 +248,13 @@ class Loss_Computation():
 		elif self.corner_loss_depth == 'keypoint_mean':
 			pred_corner_depth_3D = preds['keypoints_depths'].mean(dim=1)
 		
+		elif self.corner_loss_depth == 'keypoint_avg':
+			pred_combined_depths = preds['keypoints_depths']
+			pred_combined_uncertainty = preds['corner_offset_uncertainty'].exp()
+			pred_uncertainty_weights = 1 / pred_combined_uncertainty
+			pred_uncertainty_weights = pred_uncertainty_weights / pred_uncertainty_weights.sum(dim=1, keepdim=True)
+			pred_corner_depth_3D = torch.sum(pred_combined_depths * pred_uncertainty_weights, dim=1)
+			preds['weighted_depths'] = pred_corner_depth_3D
 		else:
 			assert self.corner_loss_depth in ['soft_combine', 'hard_combine']
 			# make sure all depths and their uncertainties are predicted
@@ -291,7 +311,9 @@ class Loss_Computation():
 			reg_2D_loss, iou_2D = self.iou_loss(preds['reg_2D'], pred_targets['reg_2D'])
 			reg_2D_loss = self.loss_weights['bbox_loss'] * reg_2D_loss.mean()
 			iou_2D = iou_2D.mean()
-			depth_MAE = (preds['depth_3D'] - pred_targets['depth_3D']).abs() / pred_targets['depth_3D']
+
+			if self.pred_direct_depth:
+				depth_MAE = (preds['depth_3D'] - pred_targets['depth_3D']).abs() / pred_targets['depth_3D']
 
 		if num_reg_3D > 0:
 			# direct depth loss
@@ -328,6 +350,8 @@ class Loss_Computation():
 
 			# dimension loss
 			dims_3D_loss = self.reg_loss_fnc(preds['dims_3D'], pred_targets['dims_3D'], reduction='none') * self.dim_weight.type_as(preds['dims_3D'])
+			if self.dim_uncern:
+				dims_3D_loss = dims_3D_loss / preds['dim_uncern'] + torch.log(preds['dim_uncern'])
 			dims_3D_loss = self.loss_weights['dims_loss'] * dims_3D_loss.sum(dim=1).mean()
 
 			with torch.no_grad(): pred_IoU_3D = get_iou_3d(preds['corners_3D'], pred_targets['corners_3D']).mean()
@@ -335,9 +359,12 @@ class Loss_Computation():
 			# corner loss
 			if self.compute_corner_loss:
 				# N x 8 x 3
-				corner_3D_loss = self.loss_weights['corner_loss'] * \
-							self.reg_loss_fnc(preds['corners_3D'], pred_targets['corners_3D'], reduction='none').sum(dim=2).mean()
-
+				corner_3D_loss = self.reg_loss_fnc(preds['corners_3D'], pred_targets['corners_3D'], reduction='none').sum(dim = 2).mean(dim = 1)
+				if self.corner_loss_uncern:
+					corner_loss_uncern = preds['corner_loss_uncern'].squeeze(1)
+					corner_3D_loss = corner_3D_loss / corner_loss_uncern + torch.log(corner_loss_uncern)
+				corner_3D_loss = self.loss_weights['corner_loss'] * corner_3D_loss.mean()
+			
 			if self.compute_keypoint_corner:
 				# N x K x 3
 				keypoint_loss = self.loss_weights['keypoint_loss'] * self.keypoint_loss_fnc(preds['keypoints'],
@@ -421,8 +448,8 @@ class Loss_Computation():
 					if self.compute_weighted_depth_loss:
 						soft_depth_loss = self.loss_weights['weighted_avg_depth_loss'] * \
 										self.reg_loss_fnc(soft_depths, pred_targets['depth_3D'], reduction='mean')
-
-			depth_MAE = depth_MAE.mean()
+			if self.pred_direct_depth:
+				depth_MAE = depth_MAE.mean()
 
 		loss_dict = {
 			'hm_loss':  hm_loss,

@@ -66,6 +66,22 @@ class Wing_Loss(torch.nn.Module):
 
         return loss
 
+def error_from_uncertainty(uncern):
+    '''
+    Description:
+        Get the error derived from uncertainty.
+    Input:
+        uncern: uncertainty tensor. shape: (val_objs, num_uncern)
+    Output:
+        error: The produced error. shape: (val_objs,)
+    '''
+    if uncern.ndim != 2:
+        raise Exception("uncern must be a 2-dim tensor.")
+    weights = 1 / uncern	# weights shape: (total_num_objs, 20)
+    weights = weights / torch.sum(weights, dim = 1, keepdim = True)
+    error = torch.sum(weights * uncern, dim = 1)	# error shape: (valid_objs,)
+    return error
+
 
 if __name__ == '__main__':
     num = 10000

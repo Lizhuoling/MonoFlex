@@ -327,6 +327,10 @@ _C.TEST.NMS_CLASS_AGNOSTIC = False
 _C.TEST.DETECTIONS_PER_IMG = 50
 _C.TEST.DETECTIONS_THRESHOLD = 0.1
 _C.TEST.VISUALIZE_THRESHOLD = 0.4
+_C.TEST.UNCERTAINTY_3D = None
+
+# Bool flag to visualize the results.
+_C.TEST.VIS = False
 
 # ---------------------------------------------------------------------------- #
 # Misc options

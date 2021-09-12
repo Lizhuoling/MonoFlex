@@ -1,11 +1,10 @@
-exp_id=MonoFlex_vit_patch8
+exp_id=debug
 
-CUDA_VISIBLE_DEVICES=2 python -B plain_train_net.py \
+CUDA_VISIBLE_DEVICES=0 python -B plain_train_net.py \
 --batch_size 8 \
---config runs/monoflex_vit.yaml \
+--config runs/monoflex_direct.yaml \
 --output output/$exp_id \
---backbone vit_small \
+--backbone dla34 \
 --seed 22 \
---lr 1e-4 \
-#--debug \
 #--scratch_backbone \
+#--debug \

@@ -88,7 +88,6 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     
     cfg.SOLVER.IMS_PER_BATCH = args.batch_size
-    cfg.SOLVER.BASE_LR = args.lr
     cfg.DATALOADER.NUM_WORKERS = args.num_work
     cfg.TEST.EVAL_DIS_IOUS = args.eval_iou
     cfg.TEST.EVAL_DEPTH = args.eval_depth 
@@ -105,6 +104,7 @@ def setup(args):
 
     cfg.START_TIME = datetime.datetime.strftime(datetime.datetime.now(), '%m-%d %H:%M:%S')
     cfg.SEED = args.seed
+    cfg.TEST.VIS = args.vis
     cfg.MODEL.PRETRAIN = args.pre_trained_backbone
     cfg.MODEL.BACKBONE.CONV_BODY = args.backbone
     default_setup(cfg, args)
